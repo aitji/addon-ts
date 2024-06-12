@@ -19,7 +19,7 @@
 
 <div align="left"><h2>(🪚) Usage</h2></div>
 
-1. Download from [releases](../releases)
+1. Download from [releases](../../releases)
 2. Navigate to the directory where you've downloaded.
 3. Open a terminal or command prompt in that directory (NOTE: Run as Administrator)
 4. Run the script using PowerShell:
@@ -29,4 +29,4 @@
 5. Follow the prompts to set up your TypeScript project. You can choose to install dependencies and start watching for changes.
 6. Start coding your Minecraft Bedrock addon in TypeScript version!
 
-<div align="right"><h2>(🪚) License</h2><p>This project is licensed under the <a href="../LICENSE">MIT License</a></p></div>
+<div align="right"><h2>(🪚) License</h2><p>This project is licensed under the <a href="../../LICENSE">MIT License</a></p></div>

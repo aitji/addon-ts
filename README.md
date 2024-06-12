@@ -29,4 +29,4 @@
 5. Follow the prompts to set up your TypeScript project. You can choose to install dependencies and start watching for changes.
 6. Start coding your Minecraft Bedrock addon in TypeScript version!
 
-<div align="right"><h2>(🪚) License</h2><p>This project is licensed under the <a href="../../LICENSE">MIT License</a></p></div>
+<div align="right"><h2>(🪚) License</h2><p>This project is licensed under the <a href="../LICENSE">MIT License</a></p></div>

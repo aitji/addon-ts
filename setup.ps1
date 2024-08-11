@@ -2,8 +2,32 @@ function New-Guid { [guid]::NewGuid().ToString() }
 function Get-Package { param([string]$packageName) ((Get-Content -Raw -Path "package.json" | ConvertFrom-Json).dependencies."$packageName" -replace "-beta.*", "-beta") -replace "\^", "" }
 
 function wColor {
-    param ( [string]$text, [string]$color = "White" )
+    param (
+        [string]$text,
+        [string]$color = "White"
+    )
     Write-Host -ForegroundColor $color -NoNewline $text
+}
+
+function checkAndForceTo {
+    $nodeVersion = node --version 2>$null
+    if (!$nodeVersion) {
+        wColor -text "Node.js is not installed`n" -color "Red"
+        $response = Read-Host "Would you like to install Node.js? (1/0)"
+        if ($response -eq "1") {
+            Write-Output "Downloading and installing the latest version of Node.js..."
+            $installerUrl = "https://nodejs.org/dist/v20.16.0/node-v20.16.0-x64.msi"
+            $installerPath = "$env:TEMP\nodejs_installer.msi"
+            Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath
+
+            Write-Output "Node.js has been installed. Please restart your terminal to use it."
+            Read-Host -Prompt "( Press ENTER to exit this terminal! )"
+            exit
+        } else {
+            Read-Host -Prompt "Node.js is required for this script. "
+            exit
+        }
+    }
 }
 
 function display {
@@ -16,7 +40,7 @@ function display {
     if ($global:showProgress) {
         $progress = [math]::Floor(($currentStep / $totalSteps) * 5)
         $remaining = 5 - $progress
-        $progressBar = "◼" * $progress + "◻" * $remaining
+        $progressBar = "1" * $progress + "0" * $remaining
         $speed = [math]::Round(100 / $totalSteps, 2)
         $timeRemaining = [math]::Round(($totalSteps - $currentStep) * ($speed / 100), 2)
 
@@ -157,9 +181,9 @@ function isYouAdmin {
     } catch { wColor -text "Error checking admin rights.`n" -color "Red" }
 
     if (-not $isAdmin) {
-        Read-Host -Prompt "You need to run on administrator to do this action
-okay! so I will popup a gui ask for run in administrator mode and this would restart the program
-press ENTER to do it!"
+        wColor -text "You need to run on administrator to do this action!`n" -color "Red"
+        wColor -text "okay! so I will popup a gui ask for run in administrator mode and this would restart the program`n" -color "Yellow"
+        Read-Host -Prompt "Press ENTER to continue"
         try {
             Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
             exit
@@ -175,6 +199,7 @@ press ENTER to do it!"
 $global:showProgress = $true
 $global:diT = ''
 function index {
+    $debugPath = Get-Location
     $loop = $true
     while ($loop) {
         Clear-Host
@@ -182,6 +207,8 @@ function index {
         wColor -text "Howdy, This is TypeScript Project Builder!`n" -color "Cyan"
         wColor -text "This project is made to help you focus on your addon, not just getting confused about setting up your TypeScript project.`n`n" -color "Cyan"
         wColor -text "Okay! What do you want to do?`n" -color "Cyan"
+        wColor -text "Current Path: $debugPath`n" -color "Yellow"
+        Write-Host ''
         wColor -text "1) Setup Project`n" -color "White"
         wColor -text "| This will generate files and setup the project for you!`n" -color "White"
         wColor -text "2) Watch TypeScript Compiler`n" -color "White"
@@ -230,4 +257,14 @@ function index {
     }
 }
 
+$scriptPath = $PSScriptRoot
+Set-Location -Path $scriptPath
+
+try {
+    checkAndForceTo
+    $global:diT = "SYSTEM: you already install node js quite cool!!"
+} catch {
+    wColor -text "some cool error happend post this on issuse tab https://github.com/aitji/addon-ts/issues/new" -color "Red" 
+    Read-Host "( Press ENETR to kill program! ) "
+}
 index

@@ -1,270 +1,552 @@
 function New-Guid { [guid]::NewGuid().ToString() }
-function Get-Package { param([string]$packageName) ((Get-Content -Raw -Path "package.json" | ConvertFrom-Json).dependencies."$packageName" -replace "-beta.*", "-beta") -replace "\^", "" }
 
 function wColor {
-    param (
-        [string]$text,
-        [string]$color = "White"
-    )
+    param([string]$text, [string]$color = "White")
     Write-Host -ForegroundColor $color -NoNewline $text
 }
 
-function checkAndForceTo {
-    $nodeVersion = node --version 2>$null
-    if (!$nodeVersion) {
-        wColor -text "Node.js is not installed`n" -color "Red"
-        $response = Read-Host "Would you like to install Node.js? (1/0)"
-        if ($response -eq "1") {
-            Write-Output "Downloading and installing the latest version of Node.js..."
-            $installerUrl = "https://nodejs.org/dist/v20.16.0/node-v20.16.0-x64.msi"
-            $installerPath = "$env:TEMP\nodejs_installer.msi"
-            Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath
+function Test-NodeJS {
+    try {
+        $nodeVersion = node --version 2>$null
+        return $null -ne $nodeVersion
+    }
+    catch {
+        return $false
+    }
+}
 
-            Write-Output "Node.js has been installed. Please restart your terminal to use it."
-            Read-Host -Prompt "( Press ENTER to exit this terminal! )"
-            exit
-        } else {
-            Read-Host -Prompt "Node.js is required for this script. "
+function Install-NodeJS {
+    wColor -text "Node.js is not installed`n" -color "Red"
+    $response = Read-Host "Would you like to install Node.js? (1/0)"
+    if ($response -eq "1") {
+        wColor -text "Downloading and installing Node.js v20.16.0...`n" -color "Yellow"
+        $installerUrl = "https://nodejs.org/dist/v20.16.0/node-v20.16.0-x64.msi"
+        $installerPath = "$env:TEMP\nodejs_installer.msi"
+        
+        try {
+            Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing
+            Start-Process -FilePath $installerPath -Wait
+            wColor -text "Node.js installed! Please restart terminal.`n" -color "Green"
+            Read-Host "Press ENTER to exit"
             exit
         }
+        catch {
+            wColor -text "Failed to download/install Node.js`n" -color "Red"
+            wColor -text "Please install manually from https://nodejs.org`n" -color "Yellow"
+        }
+    }
+    else {
+        wColor -text "Node.js is required. Exiting...`n" -color "Red"
+        exit
     }
 }
 
-function display {
-    param (
-        [string]$title,
-        [string]$description,
-        [int]$totalSteps,
-        [int]$currentStep
-    )
-    if ($global:showProgress) {
-        $progress = [math]::Floor(($currentStep / $totalSteps) * 5)
-        $remaining = 5 - $progress
-        $progressBar = "1" * $progress + "0" * $remaining
-        $speed = [math]::Round(100 / $totalSteps, 2)
-        $timeRemaining = [math]::Round(($totalSteps - $currentStep) * ($speed / 100), 2)
-
-        Clear-Host
-        wColor -text "$title`n" -color "Cyan"
-        wColor -text "$description`n" -color "White"
-        Write-Host ""
-        wColor -text "Task: " -color "Green"
-        wColor -text "$progressBar ($currentStep/$totalSteps)`n" -color "Green"
-        wColor -text "Speed: " -color "Yellow"
-        wColor -text "$speed m/s (Time Remaining: ~ $timeRemaining seconds)`n" -color "Yellow"
-        Start-Sleep -Milliseconds 500
-    }
-}
-
-function buildT {
-    $totalSteps = 2
-    $currentStep = 0
-
-    display -title "Setting Up Project Structure" -description "Creating 'src' directory..." -totalSteps $totalSteps -currentStep $currentStep
-    New-Item -ItemType Directory -Path "src" -Force
-    $currentStep++
-
-    display -title "Setting Up Project Structure" -description "Creating 'src/index.ts' file..." -totalSteps $totalSteps -currentStep $currentStep
-    New-Item -ItemType File -Path "src/index.ts" -Force
-    if (!$global:showProgress) { wColor -text "Project structure created.`n" -color "Green" }
-}
-
-function setRemote {
-    $totalSteps = 1
-    $currentStep = 0
-
-    $currentStep++
-    display -title "Setting Execution Policy" -description "Checking current execution policy..." -totalSteps $totalSteps -currentStep $currentStep
-    $currentPolicy = Get-ExecutionPolicy -List | Where-Object { $_.Scope -eq 'CurrentUser' }
-    if ($currentPolicy.Policy -eq 'RemoteSigned') {
-        if (!$global:showProgress) { wColor -text "Execution policy is already set.`n" -color "Green" }
-    } else {
-        if (!$global:showProgress) { wColor -text "Setting execution policy...`n" -color "Yellow" }
-        Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
-        if (!$global:showProgress) { wColor -text "Execution policy set.`n" -color "Green" }
-    }
-}
-
-function iModule {
-    $totalSteps = 4
-    $currentStep = 0
-
-    $currentStep++
-    display -title "Installing Modules" -description "Installing TypeScript globally..." -totalSteps $totalSteps -currentStep $currentStep
-    npm install -g typescript
-
-    $currentStep++
-    display -title "Installing Modules" -description "Initializing npm..." -totalSteps $totalSteps -currentStep $currentStep
-    npm init -y
-
-    $currentStep++
-    display -title "Installing Modules" -description "Choosing version and installing packages..." -totalSteps $totalSteps -currentStep $currentStep
-    $versionChoice = Read-Host "Choose version (stable/beta)"
-    if ($versionChoice -eq "beta") {
-        npm install @minecraft/server@beta
-        npm install @minecraft/server-ui@beta
-    } else {
-        npm install @minecraft/server
-        npm install @minecraft/server-ui
-    }
-}
-
-function gen-manifest {
-    $totalSteps = 2
-    $currentStep = 0
-
-    $currentStep++
-    display -title "Generating Manifest" -description "Generating UUIDs and getting versions..." -totalSteps $totalSteps -currentStep $currentStep
-    $uuid1 = New-Guid
-    $uuid2 = New-Guid
-    $uuid3 = New-Guid
-    $serverVersion = Get-Package -packageName "@minecraft/server"
-    $serverUiVersion = Get-Package -packageName "@minecraft/server-ui"
-
-    $currentStep++
-    display -title "Generating Manifest" -description "Creating manifest.json file..." -totalSteps $totalSteps -currentStep $currentStep
-    $manifestContent = @"
-{"format_version":2,"header":{"name":"typescript project","description":"my typescript project!~","uuid":"$uuid1","version":[0,0,1],"min_engine_version":[1,19,70]},"modules":[{"type":"data","uuid":"$uuid2","version":[1,0,0]},{"type":"script","uuid":"$uuid3","version":[1,0,0],"entry":"scripts/index.js"}],"dependencies":[{"module_name":"@minecraft/server","version":"$serverVersion"},{"module_name":"@minecraft/server-ui","version":"$serverUiVersion"}]}
-"@
-    Set-Content -Path "manifest.json" -Value $manifestContent
-    if (!$global:showProgress) { wColor -text "Manifest file created.`n" -color "Green" }
-}
-
-function tsConFig {
-    $totalSteps = 1
-    $currentStep = 0
-
-    $currentStep++
-    display -title "Creating tsconfig.json" -description "Writing tsconfig.json file..." -totalSteps $totalSteps -currentStep $currentStep
-    $tsConfigContent = @"
-{"compilerOptions":{"module":"ES2020","target":"ES2021","moduleResolution":"Node","allowSyntheticDefaultImports":true,"baseUrl":"./src","rootDir":"./src","outDir":"./scripts"},"exclude":["node_modules"],"include":["src"]}
-"@
-    Set-Content -Path "tsconfig.json" -Value $tsConfigContent
-    if (!$global:showProgress) { wColor -text "tsconfig.json file created.`n" -color "Green" }
-}
-
-function fdv {
-    $filesToCheck = @("manifest.json", "tsconfig.json", "src/index.ts")
-    $dirsToCheck = @("src")
-    $totalSteps = $filesToCheck.Count + $dirsToCheck.Count
-    $currentStep = 0
-
-    foreach ($file in $filesToCheck) {
-        $currentStep++
-        display -title "Checking Files" -description "Checking file: $file" -totalSteps $totalSteps -currentStep $currentStep
-        if (-not (Test-Path -Path $file)) {
-            if (!$global:showProgress) { wColor -text "File '$file' is missing. Recreating...`n" -color "Yellow" }
-            switch ($file) {
-                "manifest.json" { gen-manifest }
-                "tsconfig.json" { tsConFig }
-            }
-        } else { if (!$global:showProgress) { wColor -text "File '$file' is present.`n" -color "Green" } }
-    }
-
-    foreach ($dir in $dirsToCheck) {
-        $currentStep++
-        display -title "Checking Directories" -description "Checking directory: $dir" -totalSteps $totalSteps -currentStep $currentStep
-        if (-not (Test-Path -Path $dir)) {
-            if (!$global:showProgress) { wColor -text "Directory '$dir' is missing. Recreating...`n" -color "Yellow" }
-            buildT
-        } else { if (!$global:showProgress) { wColor -text "Directory '$dir' is present.`n" -color "Green" } }
-    }
-}
-
-function isYouAdmin {
-    Clear-Host
-    $isAdmin = $false
+function Test-AdminRights {
     try {
-        $windowsIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-        $windowsPrincipal = New-Object System.Security.Principal.WindowsPrincipal($windowsIdentity)
-        $isAdmin = $windowsPrincipal.IsInRole([System.Security.Principal.WindowsBuiltinRole]::Administrator)
-    } catch { wColor -text "Error checking admin rights.`n" -color "Red" }
+        $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+        $principal = New-Object System.Security.Principal.WindowsPrincipal($identity)
+        return $principal.IsInRole([System.Security.Principal.WindowsBuiltinRole]::Administrator)
+    }
+    catch {
+        return $false
+    }
+}
 
-    if (-not $isAdmin) {
-        wColor -text "You need to run on administrator to do this action!`n" -color "Red"
-        wColor -text "okay! so I will popup a gui ask for run in administrator mode and this would restart the program`n" -color "Yellow"
-        Read-Host -Prompt "Press ENTER to continue"
+function Request-AdminRights {
+    if (-not (Test-AdminRights)) {
+        wColor -text "Administrator rights required!`n" -color "Red"
+        wColor -text "Restarting with admin privileges...`n" -color "Yellow"
+        Read-Host "Press ENTER to continue"
         try {
             Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
             exit
         }
         catch {
-            wColor -text "Exiting script. Please run as administrator.`n" -color "Red"
-            Read-Host -Prompt "Press ENTER to go back... "
-            index
+            wColor -text "Failed to restart as admin. Please run manually.`n" -color "Red"
+            Read-Host "Press ENTER to return"
+            return $false
         }
     }
+    return $true
+}
+function Get-NPMVersions {
+    param([string]$packageName)
+    try {
+        $response = Invoke-RestMethod -Uri "https://registry.npmjs.org/$packageName" -Method Get -ErrorAction Stop
+        $versions = $response.versions.PSObject.Properties.Name
+        return $versions | Sort-Object { 
+            $parts = $_ -split '\.' | ForEach-Object { [int]($_ -replace '\D.*', '') }
+            [System.Version]"$($parts[0]).$($parts[1]).$($parts[2])"
+        } -Descending
+    }
+    catch {
+        wColor -text "Failed to fetch versions for $packageName`n" -color "Red"
+        return @()
+    }
+}
+
+function Get-FilteredVersions {
+    param(
+        [string]$packageName,
+        [string[]]$includeFilters = @(),
+        [string[]]$excludeFilters = @()
+    )
+    $allVersions = Get-NPMVersions -packageName $packageName
+    $filtered = $allVersions
+    
+    if ($includeFilters.Count -gt 0) {
+        $filtered = $filtered | Where-Object {
+            $version = $_
+            ($includeFilters | ForEach-Object { $version -like "*$_*" }) -contains $true
+        }
+    }
+    
+    if ($excludeFilters.Count -gt 0) {
+        $filtered = $filtered | Where-Object {
+            $version = $_
+            ($excludeFilters | ForEach-Object { $version -like "*$_*" }) -notcontains $true
+        }
+    }
+    
+    return $filtered
+}
+
+function Show-VersionMenu {
+    param([string]$packageName)
+    
+    Clear-Host
+    wColor -text "=== Version Selection for $packageName ===`n" -color "Cyan"
+    wColor -text "1) Latest Stable Only`n" -color "White"
+    wColor -text "2) Latest Beta Only`n" -color "Yellow"
+    wColor -text "3) Latest Beta-Stable`n" -color "Green"
+    wColor -text "4) Custom Version Selection`n" -color "White"
+    wColor -text "5) Auto (Recommended)`n" -color "Cyan"
+    wColor -text "0) Skip Package`n" -color "Red"
+    
+    $choice = Read-Host " "
+    
+    switch ($choice) {
+        "1" {
+            $stable = Get-FilteredVersions -packageName $packageName -excludeFilters @("beta", "rc", "preview", "alpha") | Select-Object -First 1
+            return @($stable)
+        }
+        "2" {
+            $beta = Get-FilteredVersions -packageName $packageName -includeFilters @("beta") -excludeFilters @("stable") | Select-Object -First 1
+            return @($beta)
+        }
+        "3" {
+            $betaStable = Get-FilteredVersions -packageName $packageName -includeFilters @("beta", "stable") | Select-Object -First 1
+            return @($betaStable)
+        }
+        "4" {
+            return Select-CustomVersion -packageName $packageName
+        }
+        "5" {
+            $betaStable = Get-FilteredVersions -packageName $packageName -includeFilters @("beta", "stable") | Select-Object -First 1
+            if ($betaStable) { return @($betaStable) }
+            $stable = Get-FilteredVersions -packageName $packageName -excludeFilters @("beta", "rc", "preview", "alpha") | Select-Object -First 1
+            return @($stable)
+        }
+        "0" { return @() }
+        default {
+            wColor -text "Invalid choice!`n" -color "Red"
+            Start-Sleep 1
+            return Show-VersionMenu -packageName $packageName
+        }
+    }
+}
+
+function Select-CustomVersion {
+    param([string]$packageName)
+    
+    Clear-Host
+    wColor -text "Available versions for $packageName (top 15):`n" -color "Cyan"
+    
+    $versions = Get-NPMVersions -packageName $packageName | Select-Object -First 15
+    
+    for ($i = 0; $i -lt $versions.Count; $i++) {
+        $color = "White"
+        if ($versions[$i] -like "*beta*stable*") { $color = "Green" }
+        elseif ($versions[$i] -like "*beta*") { $color = "Yellow" }
+        elseif ($versions[$i] -like "*rc*") { $color = "Cyan" }
+        
+        wColor -text "$($i + 1)) " -color "White"
+        wColor -text "$($versions[$i])`n" -color $color
+    }
+    
+    wColor -text "0) Back`n" -color "Red"
+    $choice = Read-Host "Select version (1-$($versions.Count))"
+    
+    if ($choice -eq "0") { return Show-VersionMenu -packageName $packageName }
+    
+    $index = [int]$choice - 1
+    if ($index -ge 0 -and $index -lt $versions.Count) {
+        return @($versions[$index])
+    }
+    
+    wColor -text "Invalid selection!`n" -color "Red"
+    Start-Sleep 1
+    return Select-CustomVersion -packageName $packageName
+}
+
+function Show-Progress {
+    param([string]$title, [string]$description, [int]$current, [int]$total)
+    
+    if ($global:showProgress) {
+        $percent = [math]::Round(($current / $total) * 100, 1)
+        $progressChars = [math]::Floor(($current / $total) * 20)
+        $progressBar = "█" * $progressChars + "░" * (20 - $progressChars)
+        
+        Clear-Host
+        wColor -text "=== $title ===`n" -color "Cyan"
+        wColor -text "$description`n" -color "White"
+        wColor -text "`nProgress: [$progressBar] $percent% ($current/$total)`n" -color "Green"
+        Start-Sleep -Milliseconds 300
+    }
+}
+
+function New-ProjectStructure {
+    $steps = @("Creating src directory", "Creating index.ts", "Creating package.json structure")
+    
+    for ($i = 0; $i -lt $steps.Count; $i++) {
+        Show-Progress -title "Project Structure" -description $steps[$i] -current ($i + 1) -total $steps.Count
+        
+        switch ($i) {
+            0 { New-Item -ItemType Directory -Path "src" -Force | Out-Null }
+            1 { 
+                $indexContent = @"
+import { world } from "@minecraft/server"
+world.sendMessage('HALO DEV :D!')
+"@
+                Set-Content -Path "src/index.ts" -Value $indexContent
+            }
+            2 { 
+                if (-not (Test-Path "package.json")) {
+                    npm init -y | Out-Null
+                }
+            }
+        }
+    }
+    
+    if (-not $global:showProgress) { wColor -text "Project structure created!`n" -color "Green" }
+}
+
+function Set-ExecutionPolicy {
+    Show-Progress -title "Security Settings" -description "Configuring PowerShell execution policy" -current 1 -total 1
+    
+    $currentPolicy = Get-ExecutionPolicy -Scope CurrentUser
+    if ($currentPolicy -ne 'RemoteSigned') {
+        Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+        if (-not $global:showProgress) { wColor -text "Execution policy configured!`n" -color "Green" }
+    }
+    else {
+        if (-not $global:showProgress) { wColor -text "Execution policy already configured!`n" -color "Green" }
+    }
+}
+
+function Install-Dependencies {
+    $steps = @("Installing TypeScript globally", "Installing Minecraft packages")
+    
+    Show-Progress -title "Dependencies" -description $steps[0] -current 1 -total $steps.Count
+    npm install -g typescript 2>$null | Out-Null
+    
+    Show-Progress -title "Dependencies" -description $steps[1] -current 2 -total $steps.Count
+    
+    $packages = @("@minecraft/server", "@minecraft/server-ui")
+    
+    foreach ($package in $packages) {
+        wColor -text "`nConfiguring $package...`n" -color "Yellow"
+        $selectedVersions = Show-VersionMenu -packageName $package
+        
+        foreach ($version in $selectedVersions) {
+            if ($version) {
+                wColor -text "Installing $package@$version...`n" -color "White"
+                npm install "$package@$version" 2>$null | Out-Null
+            }
+        }
+    }
+    
+    if (-not $global:showProgress) { wColor -text "All dependencies installed!`n" -color "Green" }
+}
+
+function New-ManifestFile {
+    Show-Progress -title "Manifest Generation" -description "Creating manifest.json" -current 1 -total 1
+    
+    $uuid1 = New-Guid
+    $uuid2 = New-Guid  
+    $uuid3 = New-Guid
+    
+    function Get-InstalledVersion {
+        param([string]$packageName)
+        try {
+            $packageJson = Get-Content "package.json" -Raw | ConvertFrom-Json
+            $version = $packageJson.dependencies."$packageName"
+            return ($version -replace "[\^~]", "") -replace "-beta.*", "-beta"
+        }
+        catch {
+            return "1.19.0"
+        }
+    }
+    
+    $serverVersion = Get-InstalledVersion "@minecraft/server"
+    $serverUiVersion = Get-InstalledVersion "@minecraft/server-ui"
+    
+    $manifest = @{
+        format_version = 2
+        header         = @{
+            name               = "TypeScript Addon"
+            description        = "TypeScript addon project"
+            uuid               = $uuid1
+            version            = @(1, 0, 0)
+            min_engine_version = @(1, 19, 70)
+        }
+        modules        = @(
+            @{
+                type    = "data"
+                uuid    = $uuid2
+                version = @(1, 0, 0)
+            },
+            @{
+                type    = "script"
+                uuid    = $uuid3
+                version = @(1, 0, 0)
+                entry   = "scripts/index.js"
+            }
+        )
+        dependencies   = @(
+            @{
+                module_name = "@minecraft/server"
+                version     = $serverVersion
+            },
+            @{
+                module_name = "@minecraft/server-ui" 
+                version     = $serverUiVersion
+            }
+        )
+    }
+    
+    $manifest | ConvertTo-Json -Depth 10 -Compress | Set-Content -Path "manifest.json"
+    if (-not $global:showProgress) { wColor -text "Manifest created!`n" -color "Green" }
+}
+
+function New-TSConfig {
+    Show-Progress -title "TypeScript Config" -description "Creating tsconfig.json" -current 1 -total 1
+    
+    $tsConfig = @{
+        compilerOptions = @{
+            target                           = "ES2021"
+            module                           = "ES2020"
+            moduleResolution                 = "Node"
+            allowSyntheticDefaultImports     = $true
+            strict                           = $true
+            esModuleInterop                  = $true
+            skipLibCheck                     = $true
+            forceConsistentCasingInFileNames = $true
+            resolveJsonModule                = $true
+            baseUrl                          = "./src"
+            rootDir                          = "./src"
+            outDir                           = "./scripts"
+            removeComments                   = $true
+            sourceMap                        = $false
+        }
+        include         = @("src/**/*")
+        exclude         = @("node_modules", "scripts")
+    }
+    
+    $tsConfig | ConvertTo-Json -Depth 10 | Set-Content -Path "tsconfig.json"
+    if (-not $global:showProgress) { wColor -text "TypeScript config created!`n" -color "Green" }
+}
+
+function Test-ProjectIntegrity {
+    $requiredFiles = @("manifest.json", "tsconfig.json", "src/index.ts", "package.json")
+    $requiredDirs = @("src")
+    $issues = @()
+    
+    foreach ($file in $requiredFiles) {
+        if (-not (Test-Path $file)) {
+            $issues += "Missing file: $file"
+        }
+    }
+    
+    foreach ($dir in $requiredDirs) {
+        if (-not (Test-Path $dir -PathType Container)) {
+            $issues += "Missing directory: $dir"
+        }
+    }
+    
+    if ($issues.Count -eq 0) {
+        wColor -text "Project integrity check passed!`n" -color "Green"
+        return $true
+    }
+    else {
+        wColor -text "Project integrity issues found:`n" -color "Red"
+        foreach ($issue in $issues) {
+            wColor -text "  - $issue`n" -color "Yellow"
+        }
+        return $false
+    }
+}
+
+function Repair-Project {
+    wColor -text "Attempting to repair project...`n" -color "Yellow"
+    
+    if (-not (Test-Path "src")) { New-ProjectStructure }
+    if (-not (Test-Path "manifest.json")) { New-ManifestFile }
+    if (-not (Test-Path "tsconfig.json")) { New-TSConfig }
+    
+    wColor -text "Repair completed!`n" -color "Green"
+}
+
+function Start-TypeScriptWatch {
+    wColor -text "Starting TypeScript compiler in watch mode...`n" -color "Cyan"
+    wColor -text "Press Ctrl+C to stop watching`n" -color "Yellow"
+    tsc --watch
 }
 
 $global:showProgress = $true
-$global:diT = ''
-function index {
-    $debugPath = Get-Location
-    $loop = $true
-    while ($loop) {
+$global:statusMessage = ''
+
+function Show-MainMenu {
+    $currentPath = (Get-Location).Path
+    
+    while ($true) {
         Clear-Host
-        Write-Host $global:diT
-        wColor -text "Howdy, This is TypeScript Project Builder!`n" -color "Cyan"
-        wColor -text "This project is made to help you focus on your addon, not just getting confused about setting up your TypeScript project.`n`n" -color "Cyan"
-        wColor -text "Okay! What do you want to do?`n" -color "Cyan"
-        wColor -text "Current Path: $debugPath`n" -color "Yellow"
-        Write-Host ''
-        wColor -text "1) Setup Project`n" -color "White"
-        wColor -text "| This will generate files and setup the project for you!`n" -color "White"
-        wColor -text "2) Watch TypeScript Compiler`n" -color "White"
-        wColor -text "| This will watch your TS and compile it to JS`n" -color "White"
-        wColor -text "3) File & Directory Verifier`n" -color "White"
-        wColor -text "| This will scan files`n" -color "White"
-        wColor -text "| If something is wrong, it will try to fix it`n" -color "White"
-        wColor -text "4) Config Builder`n" -color "White"
-        wColor -text "0) Exit?`n" -color "White"
-        $ch = Read-Host " "
-        switch ($ch) {
-            "0" {
-                wColor -text "Exiting...`n" -color "Cyan"
-                $loop = $false
-            }
+        
+        if ($global:statusMessage) {
+            wColor -text "$($global:statusMessage)`n" -color "Green"
+            $global:statusMessage = ''
+        }
+        
+        wColor -text "TypeScript Addon Builder`n" -color "Cyan"
+        wColor -text "tool for Minecraft Bedrock TypeScript development`n`n" -color "White"
+        wColor -text "Current Directory: " -color "Yellow"
+        wColor -text "$currentPath`n`n" -color "White"
+        
+        wColor -text "Main Options:`n" -color "Cyan"
+        wColor -text "1) Complete Project Setup`n" -color "White"
+        wColor -text "2) Start TypeScript Watcher`n" -color "White"
+        wColor -text "3) Project Integrity Check`n" -color "White"
+        wColor -text "4) Repair Project`n" -color "White"
+        wColor -text "5) Settings`n" -color "White"
+        wColor -text "6) Package Manager`n" -color "White"
+        wColor -text "0) Exit`n" -color "Red"
+        
+        $choice = Read-Host "Select option"
+        
+        switch ($choice) {
             "1" {
-                $global:diT = "Setup complete. TypeScript project ready!`n"
-                isYouAdmin
-                wColor -text "Setting up...`n" -color "Cyan"
-                setRemote; iModule; gen-manifest; tsConFig; buildT
-                wColor -text "Setup complete. TypeScript project ready!`n" -color "Green"
-            }
-            "2" {
-                $global:diT = "Starting tsc --watch...`n"
-                wColor -text "Starting tsc --watch...`n" -color "Cyan"
-                tsc --watch
-            }
-            "3" {
-                $global:diT = "Checking and reinstalling files...`n"
-                isYouAdmin
-                wColor -text "Checking and reinstalling files...`n" -color "Cyan"
-                fdv
-            }
-            "4" {
-                $showProgressChoice = Read-Host "Do you want to see the progress? (1/0)"
-                if ($showProgressChoice -eq "1") {
-                    $global:diT = "Setting Changed: showProgress: true"
-                    $global:showProgress = $true
-                } elseif ($showProgressChoice -eq "0") {
-                    $global:diT = "Setting Changed: showProgress: false"
-                    $global:showProgress = $false
+                if (Request-AdminRights) {
+                    wColor -text "Setting up complete TypeScript project...`n" -color "Cyan"
+                    Set-ExecutionPolicy
+                    New-ProjectStructure
+                    Install-Dependencies
+                    New-ManifestFile
+                    New-TSConfig
+                    $global:statusMessage = "Project setup completed successfully!"
                 }
             }
-            default { wColor -text "Invalid choice, try again!`n" -color "Red" }
+            "2" {
+                if (Test-Path "tsconfig.json") {
+                    Start-TypeScriptWatch
+                }
+                else {
+                    wColor -text "No tsconfig.json found! Run setup first.`n" -color "Red"
+                    Read-Host "Press ENTER to continue"
+                }
+            }
+            "3" {
+                if (Test-ProjectIntegrity) {
+                    $global:statusMessage = "Project integrity verified!"
+                }
+                else {
+                    Read-Host "Press ENTER to continue"
+                }
+            }
+            "4" {
+                if (Request-AdminRights) {
+                    Repair-Project
+                    $global:statusMessage = "Project repair completed!"
+                }
+            }
+            "5" {
+                Show-SettingsMenu
+            }
+            "6" {
+                Show-PackageMenu
+            }
+            "0" {
+                wColor -text "Goodbye!`n" -color "Cyan"
+                exit
+            }
+            default {
+                wColor -text "Invalid choice!`n" -color "Red"
+                Start-Sleep 1
+            }
         }
     }
 }
 
-$scriptPath = $PSScriptRoot
-Set-Location -Path $scriptPath
+function Show-SettingsMenu {
+    Clear-Host
+    wColor -text "Settings Menu`n" -color "Cyan"
+    wColor -text "1) Toggle Progress Animations (Current: " -color "White"
+    wColor -text $(if ($global:showProgress) { "ON" } else { "OFF" }) -color $(if ($global:showProgress) { "Green" } else { "Red" })
+    wColor -text ")`n" -color "White"
+    wColor -text "0) Back to Main Menu`n" -color "Red"
+    
+    $choice = Read-Host "Select option"
+    switch ($choice) {
+        "1" {
+            $global:showProgress = -not $global:showProgress
+            $global:statusMessage = "Progress animations: $(if ($global:showProgress) { 'ENABLED' } else { 'DISABLED' })"
+        }
+        "0" { return }
+    }
+}
+
+function Show-PackageMenu {
+    Clear-Host
+    wColor -text "Package Management`n" -color "Cyan"
+    wColor -text "1) List Installed Packages`n" -color "White"
+    wColor -text "2) Add Package`n" -color "White"
+    wColor -text "3) Update Packages`n" -color "White"
+    wColor -text "0) Back`n" -color "Red"
+    
+    $choice = Read-Host "Select option"
+    switch ($choice) {
+        "1" {
+            if (Test-Path "package.json") { npm list }
+            else { wColor -text "No package.json found!`n" -color "Red" }
+            Read-Host "Press ENTER to continue"
+        }
+        "2" {
+            $packageName = Read-Host "Enter package name"
+            if ($packageName) {
+                $versions = Show-VersionMenu -packageName $packageName
+                foreach ($version in $versions) {
+                    if ($version) { npm install "$packageName@$version" }
+                }
+            }
+        }
+        "3" {
+            npm update
+            Read-Host "Press ENTER to continue"
+        }
+        "0" { return }
+    }
+}
 
 try {
-    checkAndForceTo
-    $global:diT = "SYSTEM: you already install node js quite cool!!"
-} catch {
-    wColor -text "some cool error happend post this on issuse tab https://github.com/aitji/addon-ts/issues/new" -color "Red" 
-    Read-Host "( Press ENETR to kill program! ) "
+    Set-Location $PSScriptRoot
+    
+    if (-not (Test-NodeJS)) {
+        Install-NodeJS
+    }
+    
+    Show-MainMenu
 }
-index
+catch {
+    wColor -text "Critical error occurred!`n" -color "Red"
+    wColor -text "Please report this issue: $($_.Exception.Message)`n" -color "Yellow"
+    Read-Host "Press ENTER to exit"
+}
